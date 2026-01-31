@@ -8,13 +8,12 @@ DOMAIN: Final = "vigicrues"
 
 # API Base URL
 API_BASE_URL: Final = "https://www.vigicrues.gouv.fr/services"
-API_VERSION: Final = "v1.1"
 
-# API Endpoints
-ENDPOINT_TERRITORIES: Final = f"{API_BASE_URL}/{API_VERSION}/TerEntVigiCru.json"
-ENDPOINT_TRONCONS: Final = f"{API_BASE_URL}/{API_VERSION}/TronEntVigiCru.json"
-ENDPOINT_STATIONS: Final = f"{API_BASE_URL}/{API_VERSION}/StaEntVigiCru.json"
-ENDPOINT_PREVISIONS: Final = f"{API_BASE_URL}/{API_VERSION}/prevision.json"
+# API Endpoints (no version in URL - API handles it internally)
+ENDPOINT_TERRITORIES: Final = f"{API_BASE_URL}/TerEntVigiCru.json"
+ENDPOINT_TRONCONS: Final = f"{API_BASE_URL}/TronEntVigiCru.json"
+ENDPOINT_STATIONS: Final = f"{API_BASE_URL}/StaEntVigiCru.json"
+ENDPOINT_PREVISIONS: Final = f"{API_BASE_URL}/prevision.json"
 ENDPOINT_OBSERVATIONS: Final = f"{API_BASE_URL}/observations.json"
 ENDPOINT_VIGILANCE: Final = f"{API_BASE_URL}/1/InfoVigiCru.geojson"
 

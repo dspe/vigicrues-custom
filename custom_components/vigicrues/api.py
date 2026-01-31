@@ -221,52 +221,70 @@ class VigicruesAPI:
         data = await self._request(ENDPOINT_STATIONS, params)
         stations = []
 
-        def extract_stations(items: list, tron_id: str = "", tron_name: str = "", ter_id: str = "") -> None:
-            for item in items:
-                if "ListEntVigiCru" in item:
-                    # This is a troncon containing stations
-                    nested_tron_id = str(item.get("CdEntVigiCru", ""))
-                    nested_tron_name = item.get("LbEntVigiCru", "")
-                    extract_stations(
-                        item["ListEntVigiCru"],
-                        nested_tron_id,
-                        nested_tron_name,
-                        ter_id,
-                    )
-                elif "CdStationHydro" in item or "CdEntVigiCru" in item:
-                    # This is a station
-                    station_id = item.get("CdStationHydro") or item.get("CdEntVigiCru", "")
-                    stations.append(
-                        Station(
-                            id=str(station_id),
-                            name=item.get("LbStationHydro") or item.get("LbEntVigiCru", ""),
-                            cours_eau=item.get("LbCoursEau"),
-                            latitude=item.get("CoordStationHydro", {}).get("Y") if isinstance(item.get("CoordStationHydro"), dict) else None,
-                            longitude=item.get("CoordStationHydro", {}).get("X") if isinstance(item.get("CoordStationHydro"), dict) else None,
-                            troncon_id=tron_id,
-                            troncon_name=tron_name,
-                            territory_id=ter_id,
-                        )
-                    )
+        def extract_stations_from_dict(item: dict, tron_id: str = "", tron_name: str = "", ter_id: str = "") -> None:
+            """Extract station information from a dictionary item."""
+            # Check if this item contains stations in aNMoinsUn field (hierarchical structure)
+            if "aNMoinsUn" in item and isinstance(item["aNMoinsUn"], list):
+                for sub_item in item["aNMoinsUn"]:
+                    # These are troncons (type 8), treat them as stations
+                    if sub_item.get("TypEntVigiCruInferieur") == "8":
+                        station_id = sub_item.get("CdEntVigiCruInferieur", "")
+                        station_name = sub_item.get("LbEntVigiCruInferieur", "")
+                        if station_id and station_name:
+                            stations.append(
+                                Station(
+                                    id=str(station_id),
+                                    name=station_name,
+                                    troncon_id=tron_id or item.get("CdEntVigiCru"),
+                                    troncon_name=tron_name or item.get("LbEntVigiCru"),
+                                    territory_id=ter_id,
+                                )
+                            )
+            
+            # Also check ListEntVigiCru (standard structure)
+            if "ListEntVigiCru" in item:
+                for sub_item in item["ListEntVigiCru"]:
+                    if isinstance(sub_item, dict):
+                        if "ListEntVigiCru" in sub_item:
+                            # This is a troncon containing stations
+                            nested_tron_id = str(sub_item.get("CdEntVigiCru", ""))
+                            nested_tron_name = sub_item.get("LbEntVigiCru", "")
+                            extract_stations_from_dict(
+                                sub_item,
+                                nested_tron_id,
+                                nested_tron_name,
+                                ter_id,
+                            )
+                        elif "CdStationHydro" in sub_item or "CdEntVigiCru" in sub_item:
+                            # This is a station
+                            station_id = sub_item.get("CdStationHydro") or sub_item.get("CdEntVigiCru", "")
+                            stations.append(
+                                Station(
+                                    id=str(station_id),
+                                    name=sub_item.get("LbStationHydro") or sub_item.get("LbEntVigiCru", ""),
+                                    cours_eau=sub_item.get("LbCoursEau"),
+                                    latitude=sub_item.get("CoordStationHydro", {}).get("Y") if isinstance(sub_item.get("CoordStationHydro"), dict) else None,
+                                    longitude=sub_item.get("CoordStationHydro", {}).get("X") if isinstance(sub_item.get("CoordStationHydro"), dict) else None,
+                                    troncon_id=tron_id,
+                                    troncon_name=tron_name,
+                                    territory_id=ter_id,
+                                )
+                            )
 
         if isinstance(data, dict):
             if "Territoire" in data:
                 ter_id = str(data["Territoire"].get("CdEntVigiCru", ""))
-                if "ListEntVigiCru" in data["Territoire"]:
-                    extract_stations(data["Territoire"]["ListEntVigiCru"], ter_id=ter_id)
+                extract_stations_from_dict(data["Territoire"], ter_id=ter_id)
             elif "Troncon" in data:
                 tron_id = str(data["Troncon"].get("CdEntVigiCru", ""))
                 tron_name = data["Troncon"].get("LbEntVigiCru", "")
-                if "ListEntVigiCru" in data["Troncon"]:
-                    extract_stations(
-                        data["Troncon"]["ListEntVigiCru"],
-                        tron_id,
-                        tron_name,
-                    )
+                extract_stations_from_dict(data["Troncon"], tron_id, tron_name)
             elif "ListEntVigiCru" in data:
-                extract_stations(data["ListEntVigiCru"])
-        elif isinstance(data, list):
-            extract_stations(data)
+                # Handle list of items at root level
+                for item in data["ListEntVigiCru"]:
+                    if isinstance(item, dict):
+                        ter_id = str(item.get("CdEntVigiCru", ""))
+                        extract_stations_from_dict(item, ter_id=ter_id)
 
         return stations
 
