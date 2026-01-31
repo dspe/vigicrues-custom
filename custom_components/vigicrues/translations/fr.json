@@ -1,0 +1,55 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sélection du territoire",
+        "description": "Choisissez un territoire Vigicrues à surveiller.",
+        "data": {
+          "territory": "Territoire"
+        }
+      },
+      "station": {
+        "title": "Sélection de la station",
+        "description": "Choisissez une station hydrométrique dans {territory}.",
+        "data": {
+          "station": "Station"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de se connecter à l'API Vigicrues",
+      "no_territories": "Aucun territoire trouvé",
+      "no_stations": "Aucune station trouvée dans ce territoire"
+    },
+    "abort": {
+      "already_configured": "Cette station est déjà configurée"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options Vigicrues",
+        "description": "Configurez l'intervalle de mise à jour.",
+        "data": {
+          "scan_interval": "Intervalle de mise à jour (secondes)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "hauteur": {
+        "name": "Hauteur d'eau"
+      },
+      "debit": {
+        "name": "Débit"
+      },
+      "vigilance": {
+        "name": "Niveau de vigilance"
+      },
+      "tendance": {
+        "name": "Tendance"
+      }
+    }
+  }
+}
