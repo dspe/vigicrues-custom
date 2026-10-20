@@ -253,6 +253,10 @@ class VigicruesSensor(CoordinatorEntity[VigicruesDataUpdateCoordinator], SensorE
         data = self.coordinator.data
         station = data.station
 
+        # Stable discovery attributes for the Lovelace card, even after entity renames.
+        attrs["integration"] = DOMAIN
+        attrs["sensor_type"] = self.entity_description.key
+
         # Common attributes
         attrs[ATTR_STATION_ID] = station.id
         attrs[ATTR_STATION_NAME] = station.name

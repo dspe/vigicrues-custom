@@ -268,3 +268,11 @@ async def test_configuration_forms_can_retry_after_catalogue_failure(hass):
         assert failed["errors"] == {"base": "cannot_connect"}
         retried = await flow.async_step_station({})
         assert retried["errors"] == {}
+
+
+async def test_card_discovery_attributes_survive_entity_renaming(coordinator):
+    coordinator.data = snapshot()
+    for description in SENSOR_DESCRIPTIONS:
+        sensor = VigicruesSensor(coordinator, description)
+        assert sensor.extra_state_attributes["integration"] == "vigicrues"
+        assert sensor.extra_state_attributes["sensor_type"] == description.key

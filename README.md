@@ -80,47 +80,93 @@ La tendance compare les cinq dernières observations de la source retenue. Le se
 
 La date `last_success` de la vigilance est une date de récupération, pas une date de publication du bulletin. L'âge des données et le statut sont réévalués à chaque collecte. Les coordonnées sont affichées uniquement si elles sont fournies en latitude / longitude ; les coordonnées Lambert du catalogue ne sont pas présentées comme des degrés.
 
-## Carte Lovelace
+## Carte Lovelace Vigicrues
 
-Ajoutez le capteur d'état pour que le fonctionnement dégradé soit visible directement :
+La version 1.2.0 inclut une carte personnalisée, sans dépendance à une autre carte ni téléchargement depuis un CDN. Elle affiche, pour chaque station, la hauteur, le débit, la tendance de chacune de ces deux grandeurs et, en option, la vigilance. Les valeurs, les unités d'affichage et les dates proviennent des capteurs Home Assistant : la carte ne contacte pas les API hydrométriques.
+
+### Installation de la carte
+
+1. Mettez à jour `custom_components/vigicrues` (en conservant son sous-dossier `www`) et redémarrez Home Assistant.
+2. Dans **Paramètres > Tableaux de bord > Ressources**, ajoutez la ressource suivante, de type **Module JavaScript** :
+
+   ```text
+   /vigicrues/vigicrues-card.js?v=1.2.0
+   ```
+
+   Activez le mode avancé de votre profil si le menu Ressources n'est pas visible. Pour un tableau de bord géré en YAML, ajoutez cette entrée à la liste `lovelace.resources` existante :
+
+   ```yaml
+   lovelace:
+     resources:
+       - url: /vigicrues/vigicrues-card.js?v=1.2.0
+         type: module
+   ```
+
+3. Rechargez la page du navigateur, puis ajoutez une carte **Vigicrues** dans le tableau de bord. Si elle n'apparaît pas encore dans le sélecteur, ajoutez une carte manuelle avec le YAML ci-dessous.
+
+Pour utiliser uniquement la carte avec l'intégration 1.1.0, copiez `custom_components/vigicrues/www/vigicrues-card.js` dans `config/www/vigicrues-card.js`, puis utilisez la ressource `/local/vigicrues-card.js?v=1.2.0` de type Module JavaScript. La version 1.2.0 ajoute des attributs stables qui permettent de retrouver les capteurs même après renommage ; avec la version 1.1.0, la détection repose sur leurs attributs et unités existants.
+
+### Afficher toutes les stations configurées
+
+```yaml
+type: custom:vigicrues-card
+title: Mes cours d’eau
+```
+
+Les nouvelles stations ajoutées à l'intégration apparaissent automatiquement. La carte n'ajoute pas de station à l'intégration : les stations disponibles restent celles configurées dans **Appareils et services > Vigicrues**.
+
+### Choisir une ou plusieurs stations
+
+Dans l'éditeur visuel de la carte, décochez **Toutes les stations configurées (automatique)** et cochez les stations souhaitées. Aucun identifiant d'entité n'est à saisir.
+
+La configuration équivalente en YAML utilise les codes de station hydrométrique :
+
+```yaml
+type: custom:vigicrues-card
+title: Mes stations
+stations:
+  - H413041010
+  - F700000103
+show_vigilance: true
+show_updated: true
+```
+
+Avec une seule entrée dans `stations`, seule cette station est affichée. Les stations explicitement sélectionnées gardent l'ordre de cette liste ; en mode automatique, elles sont triées par nom. `stations: []` correspond à une sélection vide et affiche une invitation à choisir des stations.
+
+| Option | Par défaut | Effet |
+|--------|------------|-------|
+| `title` | `Vigicrues` | Titre de la carte ; chaîne vide pour le masquer |
+| `stations` | non défini | Toutes les stations ; sinon liste de codes hydrométriques |
+| `show_vigilance` | `true` | Afficher la vigilance officielle et son éventuelle ancienneté |
+| `show_updated` | `true` | Afficher la date et l'âge de chaque mesure |
+
+Un clic sur une hauteur ou un débit ouvre le panneau de détails Home Assistant de l'entité correspondante, avec son historique lorsqu'il est disponible. Un clic sur la vigilance ouvre également ses détails.
+
+### Données anciennes et données absentes
+
+Les badges signalent la source de secours ou une collecte dégradée. Chaque mesure conservée ou de plus de deux heures affiche **Dernière valeur connue**. La carte réévalue l'âge des données toutes les minutes tant qu'elle est affichée, même si aucun nouvel état n'arrive de Home Assistant. Une grandeur absente affiche un tiret et **Mesure indisponible**, jamais un zéro inventé. Une vigilance absente affiche **Vigilance inconnue**. Une station sélectionnée mais introuvable reste visible avec ses mesures indisponibles.
+
+Les flèches décrivent les dernières tendances connues, calculées par l'intégration ; elles ne constituent pas une prévision. Pendant une panne, leur ancienneté est celle de la mesure affichée. Les styles suivent le thème clair ou sombre de Home Assistant et s'adaptent à la largeur de la carte.
+
+Pour les automatisations qui nécessitent une mesure récente, ajoutez une condition sur son attribut `data_stale` plutôt que de vous fier à sa seule disponibilité : une dernière valeur connue reste volontairement affichable pendant une panne.
+
+### Carte native simple
+
+Une carte standard Home Assistant reste possible sans installer la ressource JavaScript. Adaptez ces identifiants à ceux de votre installation :
 
 ```yaml
 type: entities
 title: Station Vigicrues
 entities:
-  - entity: sensor.vigicrues_paris_austerlitz_statut
-    name: État des données
-  - entity: sensor.vigicrues_paris_austerlitz_hauteur
-    name: Hauteur d'eau
-  - entity: sensor.vigicrues_paris_austerlitz_debit
-    name: Débit
-  - entity: sensor.vigicrues_paris_austerlitz_vigilance
-    name: Vigilance
-  - entity: sensor.vigicrues_paris_austerlitz_tendance
-    name: Tendance
+  - sensor.vigicrues_paris_austerlitz_statut
+  - sensor.vigicrues_paris_austerlitz_hauteur
+  - sensor.vigicrues_paris_austerlitz_debit
+  - sensor.vigicrues_paris_austerlitz_tendance
 ```
-
-Pour signaler explicitement une mesure conservée :
-
-```yaml
-type: conditional
-conditions:
-  - condition: state
-    entity: sensor.vigicrues_paris_austerlitz_statut
-    state_not: "ok"
-card:
-  type: markdown
-  content: >-
-    ⚠️ Collecte dégradée, source de secours ou données anciennes.
-    Dernière mesure de hauteur :
-    {{ state_attr('sensor.vigicrues_paris_austerlitz_hauteur', 'timestamp') }}.
-```
-
-Pour les automatisations qui nécessitent une mesure récente, ajoutez une condition sur son attribut `data_stale` plutôt que de vous fier à sa seule disponibilité : une dernière valeur connue reste volontairement affichable pendant une panne.
 
 ## Vérification du code
 
-Tests exécutés avec Home Assistant 2026.10.2 et Python 3.14. Les tests n'appellent aucun service externe. Les exemples de réponses dans `tests/fixtures` sont des extraits des flux officiels observés le 20 octobre 2026 ; les dates utilisées dans les scénarios sont ajustées pendant les tests.
+Tests exécutés avec Home Assistant 2026.10.2, Python 3.14 et Node.js 22 pour la carte. Les tests n'appellent aucun service externe. Les exemples de réponses dans `tests/fixtures` sont des extraits des flux officiels observés le 20 octobre 2026 ; les dates utilisées dans les scénarios sont ajustées pendant les tests. Les tests de la carte couvrent la détection des stations, les capteurs renommés, les deux tendances, les données absentes, les données anciennes, le secours et les sélections multiples.
 
 ```sh
 python3 -m venv venv
@@ -128,6 +174,7 @@ venv/bin/pip install -r requirements-test.txt
 venv/bin/python -m pytest
 venv/bin/ruff check custom_components tests
 venv/bin/ruff format --check custom_components tests
+node --test tests/frontend/card.test.mjs
 ```
 
 Les tests couvrent les pannes HTTP / réseau, JSON invalide, réponses partielles HTTP 206, conversions d'unités, conservation partielle, reprise, redémarrage avec cache, dates anciennes, prévisions et configuration des options.

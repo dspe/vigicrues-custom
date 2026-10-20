@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -14,6 +16,20 @@ from .coordinator import VigicruesDataUpdateCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Serve the bundled dashboard card once for all station entries."""
+    await hass.http.async_register_static_paths(
+        [
+            StaticPathConfig(
+                "/vigicrues/vigicrues-card.js",
+                str(Path(__file__).parent / "www" / "vigicrues-card.js"),
+                False,
+            ),
+        ]
+    )
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
