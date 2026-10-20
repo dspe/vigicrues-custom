@@ -1,0 +1,4 @@
+homeassistant==2026.10.2
+pytest>=8
+pytest-asyncio>=1
+ruff>=0.9

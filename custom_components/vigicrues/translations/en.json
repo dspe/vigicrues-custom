@@ -49,6 +49,14 @@
       },
       "tendance": {
         "name": "Trend"
+      },
+      "statut": {
+        "name": "Data status",
+        "state": {
+          "ok": "Up to date",
+          "degraded": "Degraded / fallback",
+          "stale": "Stale data"
+        }
       }
     }
   }

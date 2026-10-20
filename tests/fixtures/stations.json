@@ -1,0 +1,115 @@
+{
+  "Scenario": {
+    "Flux": {
+      "Version": "1",
+      "DateRevision": "2019-07-02T15:00:00"
+    },
+    "CodeScenario": "VIC",
+    "VersionScenario": "1.1",
+    "NomScenario": "Référentiels et données de la vigilance crues métropolitaine",
+    "DateHeureCreationFichier": "2026-10-20T15:27:01+00:00",
+    "Emetteur": "1524"
+  },
+  "ListEntVigiCru": [
+    {
+      "CdEntVigiCru": "IF10",
+      "TypEntVigiCru": "8",
+      "LbEntVigiCru": "Armançon",
+      "CdDistrictEntVigiCru_1": "A renseigner obligatoirement",
+      "DtHrCreatEntVigiCru": "A renseigner obligatoirement",
+      "DtHrMajEntVigiCru": "A renseigner obligatoirement",
+      "StEntVigiCru": "Validé",
+      "CdTCC": "A renseigner obligatoirement",
+      "CdInt": "A renseigner obligatoirement",
+      "Link": "https://www.vigicrues.gouv.fr/services/v1.1/TronEntVigiCru.json?CdEntVigiCru=IF10&TypEntVigiCru=8",
+      "aNPlusUn": {
+        "CdEntVigiCruSuperieur": "7",
+        "TypEntVigiCruSuperieur": "5",
+        "LbEntVigiCruSuperieur": "Seine moyenne-Yonne-Loing",
+        "Link": "https://www.vigicrues.gouv.fr/services/v1.1/TerEntVigiCru.json?CdEntVigiCru=7&TypEntVigiCru=5"
+      },
+      "aNMoinsUn": [
+        {
+          "CdEntVigiCruInferieur": "F330000102",
+          "TypEntVigiCruInferieur": "7",
+          "LbEntVigiCruInferieur": "Pont-et-Massène [Amont barrage]",
+          "Link": "https://www.vigicrues.gouv.fr/services/v1.1/StaEntVigiCru.json?CdEntVigiCru=F330000102&TypEntVigiCru=7"
+        },
+        {
+          "CdEntVigiCruInferieur": "H240201001",
+          "TypEntVigiCruInferieur": "8",
+          "LbEntVigiCruInferieur": "Brianny",
+          "Link": "https://www.vigicrues.gouv.fr/services/v1.1/StaEntVigiCru.json?CdEntVigiCru=H240201001&TypEntVigiCru=7"
+        },
+        {
+          "CdEntVigiCruInferieur": "H241201001",
+          "TypEntVigiCruInferieur": "8",
+          "LbEntVigiCruInferieur": "Quincy-le-Vicomte",
+          "Link": "https://www.vigicrues.gouv.fr/services/v1.1/StaEntVigiCru.json?CdEntVigiCru=H241201001&TypEntVigiCru=7"
+        },
+        {
+          "CdEntVigiCruInferieur": "H245202001",
+          "TypEntVigiCruInferieur": "8",
+          "LbEntVigiCruInferieur": "Aisy-sur-Armançon [aval]",
+          "Link": "https://www.vigicrues.gouv.fr/services/v1.1/StaEntVigiCru.json?CdEntVigiCru=H245202001&TypEntVigiCru=7"
+        },
+        {
+          "CdEntVigiCruInferieur": "H246202001",
+          "TypEntVigiCruInferieur": "8",
+          "LbEntVigiCruInferieur": "Tronchoy",
+          "Link": "https://www.vigicrues.gouv.fr/services/v1.1/StaEntVigiCru.json?CdEntVigiCru=H246202001&TypEntVigiCru=7"
+        },
+        {
+          "CdEntVigiCruInferieur": "H247301001",
+          "TypEntVigiCruInferieur": "8",
+          "LbEntVigiCruInferieur": "Chessy-les-Prés",
+          "Link": "https://www.vigicrues.gouv.fr/services/v1.1/StaEntVigiCru.json?CdEntVigiCru=H247301001&TypEntVigiCru=7"
+        },
+        {
+          "CdEntVigiCruInferieur": "H248201001",
+          "TypEntVigiCruInferieur": "8",
+          "LbEntVigiCruInferieur": "Brienon-sur-Armançon",
+          "Link": "https://www.vigicrues.gouv.fr/services/v1.1/StaEntVigiCru.json?CdEntVigiCru=H248201001&TypEntVigiCru=7"
+        }
+      ]
+    },
+    {
+      "CdEntVigiCru": "IF11",
+      "TypEntVigiCru": "8",
+      "LbEntVigiCru": "Seine Bassée francilienne",
+      "CdDistrictEntVigiCru_1": "A renseigner obligatoirement",
+      "DtHrCreatEntVigiCru": "A renseigner obligatoirement",
+      "DtHrMajEntVigiCru": "A renseigner obligatoirement",
+      "StEntVigiCru": "Validé",
+      "CdTCC": "A renseigner obligatoirement",
+      "CdInt": "A renseigner obligatoirement",
+      "Link": "https://www.vigicrues.gouv.fr/services/v1.1/TronEntVigiCru.json?CdEntVigiCru=IF11&TypEntVigiCru=8",
+      "aNPlusUn": {
+        "CdEntVigiCruSuperieur": "7",
+        "TypEntVigiCruSuperieur": "5",
+        "LbEntVigiCruSuperieur": "Seine moyenne-Yonne-Loing",
+        "Link": "https://www.vigicrues.gouv.fr/services/v1.1/TerEntVigiCru.json?CdEntVigiCru=7&TypEntVigiCru=5"
+      },
+      "aNMoinsUn": [
+        {
+          "CdEntVigiCruInferieur": "F221000201",
+          "TypEntVigiCruInferieur": "8",
+          "LbEntVigiCruInferieur": "Bray-sur-Seine",
+          "Link": "https://www.vigicrues.gouv.fr/services/v1.1/StaEntVigiCru.json?CdEntVigiCru=F221000201&TypEntVigiCru=7"
+        },
+        {
+          "CdEntVigiCruInferieur": "F232000101",
+          "TypEntVigiCruInferieur": "8",
+          "LbEntVigiCruInferieur": "Jutigny",
+          "Link": "https://www.vigicrues.gouv.fr/services/v1.1/StaEntVigiCru.json?CdEntVigiCru=F232000101&TypEntVigiCru=7"
+        },
+        {
+          "CdEntVigiCruInferieur": "F240000106",
+          "TypEntVigiCruInferieur": "8",
+          "LbEntVigiCruInferieur": "Bazoches-lès-Bray [Station débitmétrique (depuis 2015)]",
+          "Link": "https://www.vigicrues.gouv.fr/services/v1.1/StaEntVigiCru.json?CdEntVigiCru=F240000106&TypEntVigiCru=7"
+        }
+      ]
+    }
+  ]
+}

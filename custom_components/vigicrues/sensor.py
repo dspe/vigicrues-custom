@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -22,7 +23,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .api import StationData
 from .const import (
     ATTR_COURS_EAU,
-    ATTR_CRUES_HISTORIQUES,
     ATTR_LATITUDE,
     ATTR_LONGITUDE,
     ATTR_PREVISIONS,
@@ -83,8 +83,8 @@ def get_hauteur_extra_attrs(data: StationData) -> dict[str, Any]:
             {
                 "timestamp": p.timestamp.isoformat(),
                 "value": round(p.value, 2),
-                "min": round(p.min_value, 2) if p.min_value else None,
-                "max": round(p.max_value, 2) if p.max_value else None,
+                "min": round(p.min_value, 2) if p.min_value is not None else None,
+                "max": round(p.max_value, 2) if p.max_value is not None else None,
             }
             for p in data.hauteur_previsions[:10]  # Limit to 10 forecasts
         ]
@@ -104,8 +104,8 @@ def get_debit_extra_attrs(data: StationData) -> dict[str, Any]:
             {
                 "timestamp": p.timestamp.isoformat(),
                 "value": round(p.value, 2),
-                "min": round(p.min_value, 2) if p.min_value else None,
-                "max": round(p.max_value, 2) if p.max_value else None,
+                "min": round(p.min_value, 2) if p.min_value is not None else None,
+                "max": round(p.max_value, 2) if p.max_value is not None else None,
             }
             for p in data.debit_previsions[:10]  # Limit to 10 forecasts
         ]
@@ -138,6 +138,13 @@ def get_tendance_extra_attrs(data: StationData) -> dict[str, Any]:
 
 SENSOR_DESCRIPTIONS: tuple[VigicruesSensorEntityDescription, ...] = (
     VigicruesSensorEntityDescription(
+        key="statut",
+        translation_key="statut",
+        device_class=SensorDeviceClass.ENUM,
+        options=["ok", "degraded", "stale"],
+        value_fn=lambda data: data.status(datetime.now(UTC)),
+    ),
+    VigicruesSensorEntityDescription(
         key=SENSOR_TYPE_HAUTEUR,
         translation_key="hauteur",
         native_unit_of_measurement=UnitOfLength.METERS,
@@ -149,7 +156,7 @@ SENSOR_DESCRIPTIONS: tuple[VigicruesSensorEntityDescription, ...] = (
     VigicruesSensorEntityDescription(
         key=SENSOR_TYPE_DEBIT,
         translation_key="debit",
-        native_unit_of_measurement=UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR,
+        native_unit_of_measurement=UnitOfVolumeFlowRate.CUBIC_METERS_PER_SECOND,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=get_debit_value,
         extra_attrs_fn=get_debit_extra_attrs,
@@ -178,8 +185,7 @@ async def async_setup_entry(
     coordinator: VigicruesDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
 
     entities = [
-        VigicruesSensor(coordinator, description)
-        for description in SENSOR_DESCRIPTIONS
+        VigicruesSensor(coordinator, description) for description in SENSOR_DESCRIPTIONS
     ]
 
     async_add_entities(entities)
@@ -223,6 +229,13 @@ class VigicruesSensor(CoordinatorEntity[VigicruesDataUpdateCoordinator], SensorE
         return device_info
 
     @property
+    def available(self) -> bool:
+        """Retained values stay visible; freshness is explicit in attributes."""
+        if self.coordinator.data is None:
+            return False
+        return self.entity_description.value_fn(self.coordinator.data) is not None
+
+    @property
     def native_value(self) -> Any:
         """Return the state of the sensor."""
         if self.coordinator.data is None:
@@ -246,10 +259,46 @@ class VigicruesSensor(CoordinatorEntity[VigicruesDataUpdateCoordinator], SensorE
 
         if station.cours_eau:
             attrs[ATTR_COURS_EAU] = station.cours_eau
-        if station.latitude:
+        if station.latitude is not None:
             attrs[ATTR_LATITUDE] = station.latitude
-        if station.longitude:
+        if station.longitude is not None:
             attrs[ATTR_LONGITUDE] = station.longitude
+
+        now = datetime.now(UTC)
+        resource = {
+            SENSOR_TYPE_TENDANCE: "hauteur",
+            SENSOR_TYPE_VIGILANCE: "vigilance",
+        }.get(self.entity_description.key, self.entity_description.key)
+        attrs["last_attempt"] = (
+            data.last_attempt.isoformat() if data.last_attempt else None
+        )
+        attrs["errors"] = data.errors
+        attrs["data_status"] = data.status(now)
+        attrs["last_success"] = {
+            key: value.isoformat() for key, value in data.last_success.items()
+        }
+        if resource == "statut":
+            attrs["data_stale"] = data.status(now) == "stale"
+            attrs["sources"] = {
+                key: getattr(data, key).source
+                for key in ("hauteur", "debit")
+                if getattr(data, key)
+            }
+        else:
+            attrs["data_stale"] = data.resource_stale(resource, now)
+            attrs["source"] = "vigicrues"
+            if resource in ("hauteur", "debit"):
+                observation = getattr(data, resource)
+                if observation:
+                    attrs["source"] = observation.source
+                    attrs["age_seconds"] = max(
+                        0, int((now - observation.timestamp).total_seconds())
+                    )
+                    # Trend has the same timestamp and freshness as its observations.
+                    attrs[ATTR_TIMESTAMP] = observation.timestamp.isoformat()
+                attrs["previsions_stale"] = data.resource_stale(
+                    f"{resource}_previsions", now
+                )
 
         # Sensor-specific attributes
         if self.entity_description.extra_attrs_fn:

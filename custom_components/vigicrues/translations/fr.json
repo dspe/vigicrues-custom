@@ -49,6 +49,14 @@
       },
       "tendance": {
         "name": "Tendance"
+      },
+      "statut": {
+        "name": "État des données",
+        "state": {
+          "ok": "À jour",
+          "degraded": "Dégradé / secours",
+          "stale": "Données anciennes"
+        }
       }
     }
   }

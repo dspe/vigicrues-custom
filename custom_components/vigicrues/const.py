@@ -9,11 +9,11 @@ DOMAIN: Final = "vigicrues"
 # API Base URL
 API_BASE_URL: Final = "https://www.vigicrues.gouv.fr/services"
 
-# API Endpoints (no version in URL - API handles it internally)
-ENDPOINT_TERRITORIES: Final = f"{API_BASE_URL}/TerEntVigiCru.json"
-ENDPOINT_TRONCONS: Final = f"{API_BASE_URL}/TronEntVigiCru.json"
-ENDPOINT_STATIONS: Final = f"{API_BASE_URL}/StaEntVigiCru.json"
-ENDPOINT_PREVISIONS: Final = f"{API_BASE_URL}/prevision.json"
+# Official API endpoints
+ENDPOINT_TERRITORIES: Final = f"{API_BASE_URL}/v1.1/TerEntVigiCru.json"
+ENDPOINT_TRONCONS: Final = f"{API_BASE_URL}/v1.1/TronEntVigiCru.json"
+ENDPOINT_STATIONS: Final = f"{API_BASE_URL}/v1.1/StaEntVigiCru.json"
+ENDPOINT_PREVISIONS: Final = f"{API_BASE_URL}/v1.1/prevision.json"
 ENDPOINT_OBSERVATIONS: Final = f"{API_BASE_URL}/observations.json"
 ENDPOINT_VIGILANCE: Final = f"{API_BASE_URL}/1/InfoVigiCru.geojson"
 
@@ -71,3 +71,9 @@ ATTR_TRONCON: Final = "troncon"
 
 # Platforms
 PLATFORMS: Final = ["sensor"]
+
+# Hub'Eau returns heights in mm and flow in l/s.
+ENDPOINT_HUBEAU_OBSERVATIONS: Final = (
+    "https://hubeau.eaufrance.fr/api/v2/hydrometrie/observations_tr"
+)
+STALE_AFTER: Final = timedelta(hours=2)

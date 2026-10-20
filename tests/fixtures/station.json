@@ -1,0 +1,57 @@
+{
+  "Scenario": {
+    "Flux": {
+      "Version": "1",
+      "DateRevision": "2019-07-02T15:00:00"
+    },
+    "CodeScenario": "VIC",
+    "VersionScenario": "1.1",
+    "NomScenario": "Référentiels et données de la vigilance crues métropolitaine",
+    "DateHeureCreationFichier": "2026-10-20T15:27:01+00:00",
+    "Emetteur": "1524"
+  },
+  "ListEntVigiCru": [
+    {
+      "CdEntVigiCru": "F700000103",
+      "TypEntVigiCru": "7",
+      "LbEntVigiCru": "Paris [Austerlitz [>2006] - Station débitmétrique]",
+      "CdDistrictEntVigiCru_1": "A renseigner obligatoirement",
+      "DtHrCreatEntVigiCru": "A renseigner obligatoirement",
+      "DtHrMajEntVigiCru": "A renseigner obligatoirement",
+      "StEntVigiCru": "Validé",
+      "CdTCC": "A renseigner obligatoirement",
+      "CdInt": "A renseigner obligatoirement",
+      "CdStationHydro": "F700000103",
+      "CdStationHydroAncienRef": "0",
+      "LbStationHydro": "Paris [Austerlitz [>2006] - Station débitmétrique]",
+      "TypStationHydro": "A renseigner obligatoirement",
+      "CdCommune": "75056",
+      "CdZoneHydro": "A renseigner obligatoirement",
+      "NomEntiteHydrographique": "Seine",
+      "CoordXStationHydro": "653435",
+      "CoordYStationHydro": "6860703",
+      "ProjCoordStationHydro": "A renseigner obligatoirement",
+      "aNPlusUn": {
+        "CdEntVigiCruSuperieur": "A renseigner",
+        "TypEntVigiCruSuperieur": "8",
+        "aNPlusUn": {
+          "CdEntVigiCruSuperieur": "A renseigner",
+          "TypEntVigiCruSuperieur": "5"
+        }
+      },
+      "VigilanceCrues": {
+        "StationPrevision": "t",
+        "FluxDonnees": {
+          "Observations": {
+            "Hauteurs": "https://www.vigicrues.gouv.fr/services/observations.json?CdStationHydro=F700000103&FormatDate=iso",
+            "Debits": "https://www.vigicrues.gouv.fr/services/observations.json?CdStationHydro=F700000103&FormatDate=iso&GrdSerie=Q"
+          },
+          "Previsions": {
+            "Hauteurs": "https://www.vigicrues.gouv.fr/services/v1.1/prevision.json?CdEntVigiCru=F700000103&TypEntVigiCru=7&FormatDate=iso",
+            "Debits": "https://www.vigicrues.gouv.fr/services/v1.1/prevision.json?CdEntVigiCru=F700000103&TypEntVigiCru=7&FormatDate=iso&GrdSimul=Q"
+          }
+        }
+      }
+    }
+  ]
+}

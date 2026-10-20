@@ -1,0 +1,22 @@
+{
+  "features": [
+    {
+      "properties": {
+        "CdTCC": "TCC22",
+        "id": "764",
+        "CdEntCru": "CO1",
+        "typentcru": "8",
+        "lbentcru": "Golo aval",
+        "acroentcru": "CO1",
+        "cddient_1": "FRL",
+        "dhcentcru": "2020/09/15 09:00:00.000",
+        "dhmentcru": "2020/09/15 09:00:00.000",
+        "stentcru": "Validé",
+        "cdensup_1": "26",
+        "typensup_1": "5",
+        "cdint": "1522",
+        "NivInfViCr": 2
+      }
+    }
+  ]
+}

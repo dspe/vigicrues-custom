@@ -1,0 +1,42 @@
+{
+  "Scenario": {
+    "Flux": {
+      "Version": "1beta",
+      "DateRevision": "2019-07-08T10:00:00"
+    },
+    "CodeScenario": "VIC",
+    "VersionScenario": "1.1",
+    "NomScenario": "Référentiels et données de la vigilance crues métropolitaine",
+    "DateHeureCreationFichier": "2026-10-20T15:28:17+00:00",
+    "Emetteur": "1524"
+  },
+  "Simul": {
+    "CdEntVigiCru": "M800001010",
+    "TypEntVigiCru": "7",
+    "LbEntVigiCru": "Nantes [Pont Anne de Bretagne]",
+    "Link": "https://www.vigicrues.gouv.fr/services/v1.1/StaEntVigiCru.json?CdEntVigiCru=M800001010&TypEntVigiCru=7",
+    "GrdSimul": "H",
+    "DtProdSimul": "2026-10-20T10:48:07+02:00",
+    "CommentSimul": "Date de production de la prévision 20/10/2026 10:48 - La prévision comporte des incertitudes. Les niveaux attendus ont une probabilité de 80% de se trouver dans la fourchette du graphique ci-dessous.",
+    "Prevs": [
+      {
+        "DtPrev": "2026-10-20T17:10:00+02:00",
+        "ResMinPrev": 4.48,
+        "ResMoyPrev": 4.61,
+        "ResMaxPrev": 4.73
+      },
+      {
+        "DtPrev": "2026-10-20T17:20:00+02:00",
+        "ResMinPrev": 4.39,
+        "ResMoyPrev": 4.52,
+        "ResMaxPrev": 4.65
+      },
+      {
+        "DtPrev": "2026-10-20T17:30:00+02:00",
+        "ResMinPrev": 4.31,
+        "ResMoyPrev": 4.43,
+        "ResMaxPrev": 4.56
+      }
+    ]
+  }
+}

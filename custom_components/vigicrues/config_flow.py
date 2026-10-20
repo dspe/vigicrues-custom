@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
@@ -46,7 +45,7 @@ class VigicruesConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle the initial step - select territory."""
         errors: dict[str, str] = {}
 
-        if user_input is not None:
+        if user_input is not None and "territory" in user_input:
             self._selected_territory_id = user_input["territory"]
             self._selected_territory_name = self._territories.get(
                 user_input["territory"], ""
@@ -76,9 +75,7 @@ class VigicruesConfigFlow(ConfigFlow, domain=DOMAIN):
             )
 
         # Sort territories by name
-        sorted_territories = dict(
-            sorted(self._territories.items(), key=lambda x: x[1])
-        )
+        sorted_territories = dict(sorted(self._territories.items(), key=lambda x: x[1]))
 
         return self.async_show_form(
             step_id="user",
@@ -96,7 +93,7 @@ class VigicruesConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle the station selection step."""
         errors: dict[str, str] = {}
 
-        if user_input is not None:
+        if user_input is not None and "station" in user_input:
             station_id = user_input["station"]
             station_info = self._stations.get(station_id, {})
 
@@ -175,15 +172,11 @@ class VigicruesConfigFlow(ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
         """Get the options flow for this handler."""
-        return VigicruesOptionsFlow(config_entry)
+        return VigicruesOptionsFlow()
 
 
 class VigicruesOptionsFlow(OptionsFlow):
     """Handle options flow for Vigicrues."""
-
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None

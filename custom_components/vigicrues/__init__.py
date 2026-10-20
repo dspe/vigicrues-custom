@@ -7,9 +7,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
 
-from .api import VigicruesAPIError
 from .const import DOMAIN
 from .coordinator import VigicruesDataUpdateCoordinator
 
@@ -22,10 +20,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Vigicrues from a config entry."""
     coordinator = VigicruesDataUpdateCoordinator(hass, entry)
 
-    try:
-        await coordinator.async_config_entry_first_refresh()
-    except VigicruesAPIError as err:
-        raise ConfigEntryNotReady(f"Failed to connect to Vigicrues API: {err}") from err
+    await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
@@ -49,3 +44,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update."""
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove persisted measurements when the integration entry is deleted."""
+    from homeassistant.helpers.storage import Store
+
+    await Store(hass, 1, f"{DOMAIN}.{entry.entry_id}").async_remove()

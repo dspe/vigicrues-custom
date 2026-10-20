@@ -1,34 +1,35 @@
-"""API client for Vigicrues."""
+"""Vigicrues client with an independent Hub'Eau observation fallback."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
-from datetime import datetime
+import math
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import aiohttp
 
 from .const import (
+    ENDPOINT_HUBEAU_OBSERVATIONS,
     ENDPOINT_OBSERVATIONS,
     ENDPOINT_PREVISIONS,
     ENDPOINT_STATIONS,
     ENDPOINT_TERRITORIES,
     ENDPOINT_TRONCONS,
     ENDPOINT_VIGILANCE,
+    STALE_AFTER,
     VIGILANCE_LEVELS,
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-# Request timeout in seconds
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT = 15
 
 
 @dataclass
 class Territory:
-    """Representation of a Vigicrues territory."""
+    """Vigicrues territory."""
 
     id: str
     name: str
@@ -37,7 +38,7 @@ class Territory:
 
 @dataclass
 class Troncon:
-    """Representation of a Vigicrues troncon (river section)."""
+    """River section."""
 
     id: str
     name: str
@@ -47,7 +48,7 @@ class Troncon:
 
 @dataclass
 class Station:
-    """Representation of a Vigicrues station."""
+    """Station metadata. Coordinates must be WGS84, never Lambert coordinates."""
 
     id: str
     name: str
@@ -61,16 +62,17 @@ class Station:
 
 @dataclass
 class Observation:
-    """Representation of an observation (height or flow)."""
+    """Observation in metres or cubic metres per second."""
 
     value: float
     timestamp: datetime
     unit: str
+    source: str = "vigicrues"
 
 
 @dataclass
 class Prevision:
-    """Representation of a forecast."""
+    """Forecast in the same SI units as observations."""
 
     value: float
     timestamp: datetime
@@ -81,7 +83,7 @@ class Prevision:
 
 @dataclass
 class StationData:
-    """Complete data for a station."""
+    """Partial station snapshot, including per-resource health information."""
 
     station: Station
     hauteur: Observation | None = None
@@ -91,422 +93,424 @@ class StationData:
     vigilance_level: str | None = None
     tendance_hauteur: str | None = None
     tendance_debit: str | None = None
+    last_success: dict[str, datetime] = field(default_factory=dict)
+    errors: dict[str, str] = field(default_factory=dict)
+    last_attempt: datetime | None = None
+
+    @property
+    def has_values(self) -> bool:
+        """Whether a snapshot contains something useful to display."""
+        return any(
+            x is not None for x in (self.hauteur, self.debit, self.vigilance_level)
+        )
+
+    def resource_stale(self, resource: str, now: datetime) -> bool:
+        """A failed refresh or an old measurement is stale, even with HTTP 200."""
+        if resource in self.errors:
+            return True
+        timestamp = self.last_success.get(resource)
+        if resource in ("hauteur", "debit"):
+            observation = getattr(self, resource)
+            timestamp = observation.timestamp if observation else None
+        return timestamp is None or now - timestamp > STALE_AFTER
+
+    def status(self, now: datetime) -> str:
+        """Summarize freshness of the values that are actually available."""
+        resources = [key for key in ("hauteur", "debit") if getattr(self, key)]
+        if self.vigilance_level is not None:
+            resources.append("vigilance")
+        if not resources or all(self.resource_stale(key, now) for key in resources):
+            return "stale"
+        if self.errors or any(self.resource_stale(key, now) for key in resources):
+            return "degraded"
+        if any(obs and obs.source == "hubeau" for obs in (self.hauteur, self.debit)):
+            return "degraded"
+        return "ok"
 
 
 class VigicruesAPIError(Exception):
-    """Exception for Vigicrues API errors."""
+    """Expected network, service or payload error."""
+
+
+def parse_datetime(value: Any) -> datetime:
+    """Normalize API dates to aware UTC datetimes."""
+    if not isinstance(value, str):
+        raise ValueError("Missing ISO timestamp")
+    result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if result.tzinfo is None:
+        raise ValueError("Timestamp has no timezone")
+    return result.astimezone(UTC)
+
+
+def finite_float(value: Any) -> float:
+    """Reject missing/non-finite measurements rather than inventing a zero."""
+    if value is None or isinstance(value, bool):
+        raise ValueError("Missing numeric value")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError("Non-finite numeric value")
+    return result
+
+
+def _items(data: Any) -> list[dict[str, Any]]:
+    """Read the common reference response envelope."""
+    items = data.get("ListEntVigiCru") if isinstance(data, dict) else data
+    if not isinstance(items, list) or any(not isinstance(x, dict) for x in items):
+        raise VigicruesAPIError("Invalid reference response")
+    return items
+
+
+def _identifier(value: Any) -> str | None:
+    """Ignore placeholder identifiers returned by station detail responses."""
+    if value is None or str(value).lower().startswith("a renseigner"):
+        return None
+    return str(value) or None
 
 
 class VigicruesAPI:
-    """Client for the Vigicrues API."""
+    """Fetch observations, forecasts and official vigilance independently."""
 
     def __init__(self, session: aiohttp.ClientSession) -> None:
-        """Initialize the API client."""
         self._session = session
 
     async def _request(self, url: str, params: dict[str, Any] | None = None) -> Any:
-        """Make a request to the API."""
         try:
             async with asyncio.timeout(REQUEST_TIMEOUT):
                 async with self._session.get(url, params=params) as response:
-                    if response.status != 200:
-                        raise VigicruesAPIError(
-                            f"API request failed with status {response.status}"
-                        )
-                    return await response.json()
-        except asyncio.TimeoutError as err:
-            raise VigicruesAPIError("API request timed out") from err
-        except aiohttp.ClientError as err:
-            raise VigicruesAPIError(f"API request failed: {err}") from err
+                    # Hub'Eau uses 206 for a paginated result, including size=5.
+                    if response.status not in (200, 206):
+                        raise VigicruesAPIError(f"HTTP {response.status}")
+                    data = await response.json()
+                    if isinstance(data, dict) and str(data.get("code", "200")) not in (
+                        "200",
+                        "204",
+                    ):
+                        raise VigicruesAPIError(f"Service error: {data.get('code')}")
+                    return data
+        except TimeoutError as err:
+            raise VigicruesAPIError("Request timed out") from err
+        except (aiohttp.ClientError, ValueError, UnicodeError) as err:
+            raise VigicruesAPIError(f"Invalid or inaccessible response: {err}") from err
 
     async def get_territories(self) -> list[Territory]:
-        """Get all territories."""
-        data = await self._request(ENDPOINT_TERRITORIES)
-        territories = []
-
-        if "ListEntViworkaroundgiCru" in data:
-            for item in data["ListEntVigiCru"]:
-                territories.append(
-                    Territory(
-                        id=item.get("CdEntVigiCru", ""),
-                        name=item.get("LbEntVigiCru", ""),
-                    )
-                )
-
-        return territories
+        return await self.get_territories_with_details()
 
     async def get_territories_with_details(self) -> list[Territory]:
-        """Get all territories with full details."""
         data = await self._request(ENDPOINT_TERRITORIES)
-        territories = []
-
-        # The API returns a flat list when no parameters are given
-        if isinstance(data, dict) and "ListEntVigiCru" in data:
-            for item in data["ListEntVigiCru"]:
-                territories.append(
-                    Territory(
-                        id=str(item.get("CdEntVigiCru", "")),
-                        name=item.get("LbEntVigiCru", ""),
-                    )
-                )
-        elif isinstance(data, list):
-            for item in data:
-                territories.append(
-                    Territory(
-                        id=str(item.get("CdEntVigiCru", "")),
-                        name=item.get("LbEntVigiCru", ""),
-                    )
-                )
-
-        return territories
+        return [
+            Territory(id=str(x["CdEntVigiCru"]), name=x["LbEntVigiCru"])
+            for x in _items(data)
+            if x.get("CdEntVigiCru") and x.get("LbEntVigiCru")
+        ]
 
     async def get_troncons(self, territory_id: str | None = None) -> list[Troncon]:
-        """Get troncons, optionally filtered by territory."""
-        params = {}
-        if territory_id:
-            params["CdEntVigiCru"] = territory_id
-            params["TypEntVigiCru"] = "5"
-
+        params = (
+            {"CdEntVigiCru": territory_id, "TypEntVigiCru": "5"}
+            if territory_id
+            else None
+        )
         data = await self._request(ENDPOINT_TRONCONS, params)
-        troncons = []
-
-        def extract_troncons(items: list, ter_id: str = "") -> None:
-            for item in items:
-                if "ListEntVigiCru" in item:
-                    # Nested structure - contains troncons
-                    for troncon in item["ListEntVigiCru"]:
-                        troncons.append(
-                            Troncon(
-                                id=str(troncon.get("CdEntVigiCru", "")),
-                                name=troncon.get("LbEntVigiCru", ""),
-                                territory_id=ter_id or str(item.get("CdEntVigiCru", "")),
-                            )
-                        )
-                else:
-                    troncons.append(
-                        Troncon(
-                            id=str(item.get("CdEntVigiCru", "")),
-                            name=item.get("LbEntVigiCru", ""),
-                            territory_id=ter_id,
-                        )
-                    )
-
-        if isinstance(data, dict):
-            if "ListEntVigiCru" in data:
-                extract_troncons(data["ListEntVigiCru"], territory_id or "")
-            elif "Territoire" in data:
-                # Detailed response
-                if "ListEntVigiCru" in data["Territoire"]:
-                    extract_troncons(
-                        data["Territoire"]["ListEntVigiCru"],
-                        str(data["Territoire"].get("CdEntVigiCru", "")),
-                    )
-        elif isinstance(data, list):
-            extract_troncons(data, territory_id or "")
-
-        return troncons
+        return [
+            Troncon(
+                str(x["CdEntVigiCru"]),
+                x["LbEntVigiCru"],
+                territory_id
+                or str(x.get("aNPlusUn", {}).get("CdEntVigiCruSuperieur", "")),
+            )
+            for x in _items(data)
+            if x.get("CdEntVigiCru") and x.get("LbEntVigiCru")
+        ]
 
     async def get_stations(
         self, territory_id: str | None = None, troncon_id: str | None = None
     ) -> list[Station]:
-        """Get stations, optionally filtered by territory or troncon."""
         params = {}
-        if territory_id:
-            params["CdEntVigiCru"] = territory_id
-            params["TypEntVigiCru"] = "5"
-        elif troncon_id:
-            params["CdEntVigiCru"] = troncon_id
-            params["TypEntVigiCru"] = "8"
-
+        if territory_id or troncon_id:
+            params = {
+                "CdEntVigiCru": territory_id or troncon_id,
+                "TypEntVigiCru": "5" if territory_id else "8",
+            }
         data = await self._request(ENDPOINT_STATIONS, params)
-        stations = []
+        stations: dict[str, Station] = {}
+        # The official feed lists sections, with stations under aNMoinsUn.
+        # Some station children incorrectly carry type 8 instead of type 7.
+        for section in _items(data):
+            if section.get("CdStationHydro"):
+                station = self._station(section)
+                stations[station.id] = station
+                continue
+            section_id = _identifier(section.get("CdEntVigiCru"))
+            parent = section.get("aNPlusUn") or {}
+            children = section.get("aNMoinsUn", [])
+            if not isinstance(parent, dict) or not isinstance(children, list):
+                raise VigicruesAPIError("Invalid station hierarchy")
+            for child in children:
+                if not isinstance(child, dict):
+                    raise VigicruesAPIError("Invalid station entry")
+                station_id = _identifier(child.get("CdEntVigiCruInferieur"))
+                name = child.get("LbEntVigiCruInferieur")
+                if station_id and name:
+                    stations[station_id] = Station(
+                        id=station_id,
+                        name=name,
+                        troncon_id=section_id,
+                        troncon_name=section.get("LbEntVigiCru"),
+                        territory_id=territory_id
+                        or _identifier(parent.get("CdEntVigiCruSuperieur")),
+                    )
+        return list(stations.values())
 
-        def extract_stations_from_dict(item: dict, tron_id: str = "", tron_name: str = "", ter_id: str = "") -> None:
-            """Extract station information from a dictionary item."""
-            # Check if this item contains stations in aNMoinsUn field (hierarchical structure)
-            if "aNMoinsUn" in item and isinstance(item["aNMoinsUn"], list):
-                for sub_item in item["aNMoinsUn"]:
-                    # These are troncons (type 8), treat them as stations
-                    if sub_item.get("TypEntVigiCruInferieur") == "8":
-                        station_id = sub_item.get("CdEntVigiCruInferieur", "")
-                        station_name = sub_item.get("LbEntVigiCruInferieur", "")
-                        if station_id and station_name:
-                            stations.append(
-                                Station(
-                                    id=str(station_id),
-                                    name=station_name,
-                                    troncon_id=tron_id or item.get("CdEntVigiCru"),
-                                    troncon_name=tron_name or item.get("LbEntVigiCru"),
-                                    territory_id=ter_id,
-                                )
-                            )
-            
-            # Also check ListEntVigiCru (standard structure)
-            if "ListEntVigiCru" in item:
-                for sub_item in item["ListEntVigiCru"]:
-                    if isinstance(sub_item, dict):
-                        if "ListEntVigiCru" in sub_item:
-                            # This is a troncon containing stations
-                            nested_tron_id = str(sub_item.get("CdEntVigiCru", ""))
-                            nested_tron_name = sub_item.get("LbEntVigiCru", "")
-                            extract_stations_from_dict(
-                                sub_item,
-                                nested_tron_id,
-                                nested_tron_name,
-                                ter_id,
-                            )
-                        elif "CdStationHydro" in sub_item or "CdEntVigiCru" in sub_item:
-                            # This is a station
-                            station_id = sub_item.get("CdStationHydro") or sub_item.get("CdEntVigiCru", "")
-                            stations.append(
-                                Station(
-                                    id=str(station_id),
-                                    name=sub_item.get("LbStationHydro") or sub_item.get("LbEntVigiCru", ""),
-                                    cours_eau=sub_item.get("LbCoursEau"),
-                                    latitude=sub_item.get("CoordStationHydro", {}).get("Y") if isinstance(sub_item.get("CoordStationHydro"), dict) else None,
-                                    longitude=sub_item.get("CoordStationHydro", {}).get("X") if isinstance(sub_item.get("CoordStationHydro"), dict) else None,
-                                    troncon_id=tron_id,
-                                    troncon_name=tron_name,
-                                    territory_id=ter_id,
-                                )
-                            )
-
-        if isinstance(data, dict):
-            if "Territoire" in data:
-                ter_id = str(data["Territoire"].get("CdEntVigiCru", ""))
-                extract_stations_from_dict(data["Territoire"], ter_id=ter_id)
-            elif "Troncon" in data:
-                tron_id = str(data["Troncon"].get("CdEntVigiCru", ""))
-                tron_name = data["Troncon"].get("LbEntVigiCru", "")
-                extract_stations_from_dict(data["Troncon"], tron_id, tron_name)
-            elif "ListEntVigiCru" in data:
-                # Handle list of items at root level
-                for item in data["ListEntVigiCru"]:
-                    if isinstance(item, dict):
-                        ter_id = str(item.get("CdEntVigiCru", ""))
-                        extract_stations_from_dict(item, ter_id=ter_id)
-
-        return stations
+    @staticmethod
+    def _station(item: dict[str, Any]) -> Station:
+        parent = item.get("aNPlusUn") or {}
+        coord = item.get("CoordStationHydro") or {}
+        if not isinstance(parent, dict) or not isinstance(coord, dict):
+            raise VigicruesAPIError("Invalid station metadata")
+        # CoordXStationHydro/CoordYStationHydro are Lambert-93, not latitude/longitude.
+        return Station(
+            id=str(item.get("CdStationHydro") or item["CdEntVigiCru"]),
+            name=item.get("LbStationHydro") or item.get("LbEntVigiCru", ""),
+            cours_eau=item.get("NomEntiteHydrographique") or item.get("LbCoursEau"),
+            latitude=coord.get("Y"),
+            longitude=coord.get("X"),
+            troncon_id=_identifier(
+                item.get("CdTronVigiCru") or parent.get("CdEntVigiCruSuperieur")
+            ),
+            troncon_name=item.get("LbTronVigiCru")
+            or parent.get("LbEntVigiCruSuperieur"),
+        )
 
     async def get_station_details(self, station_id: str) -> Station | None:
-        """Get details for a specific station."""
-        params = {
-            "CdEntVigiCru": station_id,
-            "TypEntVigiCru": "7",
-        }
-        data = await self._request(ENDPOINT_STATIONS, params)
-
-        if isinstance(data, dict) and "Station" in data:
-            station_data = data["Station"]
-            coord = station_data.get("CoordStationHydro", {})
-            return Station(
-                id=str(station_data.get("CdStationHydro", station_id)),
-                name=station_data.get("LbStationHydro", ""),
-                cours_eau=station_data.get("LbCoursEau"),
-                latitude=coord.get("Y") if isinstance(coord, dict) else None,
-                longitude=coord.get("X") if isinstance(coord, dict) else None,
-                troncon_id=station_data.get("CdTronVigiCru"),
-                troncon_name=station_data.get("LbTronVigiCru"),
-            )
-
+        data = await self._request(
+            ENDPOINT_STATIONS,
+            {
+                "CdEntVigiCru": station_id,
+                "TypEntVigiCru": "7",
+            },
+        )
+        for item in _items(data):
+            if (
+                str(item.get("CdStationHydro") or item.get("CdEntVigiCru"))
+                == station_id
+            ):
+                return self._station(item)
         return None
 
     async def get_observations(
         self, station_id: str, grandeur: str = "H"
     ) -> list[Observation]:
-        """Get observations for a station.
+        data = await self._request(
+            ENDPOINT_OBSERVATIONS,
+            {
+                "CdStationHydro": station_id,
+                "GrdSerie": grandeur,
+                "FormatDate": "iso",
+            },
+        )
+        if not isinstance(data, dict) or not isinstance(data.get("Serie"), dict):
+            raise VigicruesAPIError("Invalid observation response")
+        serie = data["Serie"]
+        if (
+            serie.get("CdStationHydro", station_id) != station_id
+            or serie.get("GrdSerie", grandeur) != grandeur
+        ):
+            raise VigicruesAPIError("Observation station or quantity mismatch")
+        items = serie.get("ObssHydro")
+        return self._observations(items, grandeur)
 
-        Args:
-            station_id: The station ID
-            grandeur: "H" for height, "Q" for flow
+    @staticmethod
+    def _observations(
+        items: Any, grandeur: str, *, hubeau: bool = False
+    ) -> list[Observation]:
+        if not isinstance(items, list):
+            raise VigicruesAPIError("Invalid observation list")
+        observations = {}
+        now = datetime.now(UTC)
+        for item in items:
+            try:
+                timestamp = parse_datetime(
+                    item.get("date_obs" if hubeau else "DtObsHydro")
+                )
+                if timestamp > now + timedelta(minutes=5):
+                    continue
+                value = finite_float(
+                    item.get("resultat_obs" if hubeau else "ResObsHydro")
+                )
+                observations[timestamp] = Observation(
+                    value=value / 1000 if hubeau else value,
+                    timestamp=timestamp,
+                    unit="m" if grandeur == "H" else "m³/s",
+                    source="hubeau" if hubeau else "vigicrues",
+                )
+            except (ValueError, TypeError, AttributeError):
+                _LOGGER.debug("Ignoring malformed observation")
+        if items and not observations:
+            raise VigicruesAPIError("No valid observations in response")
+        return sorted(observations.values(), key=lambda obs: obs.timestamp)
 
-        Returns:
-            List of observations
-        """
-        params = {
-            "CdStationHydro": station_id,
-            "GrdSerie": grandeur,
-            "FormatDate": "iso",
-        }
-        data = await self._request(ENDPOINT_OBSERVATIONS, params)
-        observations = []
+    async def get_hubeau_observations(
+        self, station_id: str, grandeur: str
+    ) -> list[Observation]:
+        data = await self._request(
+            ENDPOINT_HUBEAU_OBSERVATIONS,
+            {
+                "code_entite": station_id,
+                "grandeur_hydro": grandeur,
+                "size": 5,
+                "sort": "desc",
+                "fields": "code_station,grandeur_hydro,date_obs,resultat_obs",
+            },
+        )
+        if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+            raise VigicruesAPIError("Invalid Hub'Eau response")
+        # Never silently substitute a neighbouring station or another quantity.
+        items = [
+            x
+            for x in data["data"]
+            if isinstance(x, dict)
+            and x.get("code_station") == station_id
+            and x.get("grandeur_hydro") == grandeur
+        ]
+        if data["data"] and not items:
+            raise VigicruesAPIError("Hub'Eau station or quantity mismatch")
+        return self._observations(items, grandeur, hubeau=True)
 
-        # Parse the observations
-        if isinstance(data, dict) and "Serie" in data:
-            serie = data["Serie"]
-            obs_list = serie.get("ObssHydro", [])
-            unit = "m" if grandeur == "H" else "m³/s"
-
-            for obs in obs_list:
-                try:
-                    timestamp = datetime.fromisoformat(
-                        obs.get("DtObsHydro", "").replace("Z", "+00:00")
-                    )
-                    value = float(obs.get("ResObsHydro", 0))
-                    observations.append(
-                        Observation(value=value, timestamp=timestamp, unit=unit)
-                    )
-                except (ValueError, TypeError) as err:
-                    _LOGGER.debug("Failed to parse observation: %s", err)
-
-        return observations
+    async def _observations_with_fallback(
+        self, station_id: str, grandeur: str
+    ) -> list[Observation]:
+        primary: list[Observation] = []
+        try:
+            primary = await self.get_observations(station_id, grandeur)
+            if primary and datetime.now(UTC) - primary[-1].timestamp <= STALE_AFTER:
+                return primary
+        except VigicruesAPIError as err:
+            _LOGGER.debug("Vigicrues observations failed: %s", err)
+        try:
+            backup = await self.get_hubeau_observations(station_id, grandeur)
+            if backup and (not primary or backup[-1].timestamp > primary[-1].timestamp):
+                return backup
+        except VigicruesAPIError:
+            if not primary:
+                raise
+        if primary:
+            return primary
+        raise VigicruesAPIError("No observations from Vigicrues or Hub'Eau")
 
     async def get_previsions(
         self, station_id: str, grandeur: str = "H"
     ) -> list[Prevision]:
-        """Get forecasts for a station.
-
-        Args:
-            station_id: The station ID
-            grandeur: "H" for height, "Q" for flow
-
-        Returns:
-            List of forecasts
-        """
-        params = {
-            "CdEntVigiCru": station_id,
-            "TypEntVigiCru": "7",
-            "GrdSimul": grandeur,
-            "FormatDate": "iso",
-        }
-        data = await self._request(ENDPOINT_PREVISIONS, params)
-        previsions = []
-
-        # Parse the previsions
-        if isinstance(data, dict):
-            simulations = data.get("ListSimul", [])
-            unit = "m" if grandeur == "H" else "m³/s"
-
-            for simul in simulations:
-                prev_list = simul.get("ListPrev", [])
-                for prev in prev_list:
-                    try:
-                        timestamp = datetime.fromisoformat(
-                            prev.get("DtPrev", "").replace("Z", "+00:00")
-                        )
-                        value = float(prev.get("ResPrev", 0))
-                        min_val = prev.get("ResMinPrev")
-                        max_val = prev.get("ResMaxPrev")
-                        previsions.append(
-                            Prevision(
-                                value=value,
-                                timestamp=timestamp,
-                                unit=unit,
-                                min_value=float(min_val) if min_val else None,
-                                max_value=float(max_val) if max_val else None,
-                            )
-                        )
-                    except (ValueError, TypeError) as err:
-                        _LOGGER.debug("Failed to parse prevision: %s", err)
-
-        return previsions
+        data = await self._request(
+            ENDPOINT_PREVISIONS,
+            {
+                "CdEntVigiCru": station_id,
+                "TypEntVigiCru": "7",
+                "GrdSimul": grandeur,
+                "FormatDate": "iso",
+            },
+        )
+        if not isinstance(data, dict) or not isinstance(data.get("Simul"), dict):
+            raise VigicruesAPIError("Invalid forecast response")
+        simulation = data["Simul"]
+        if (
+            simulation.get("CdEntVigiCru", station_id) != station_id
+            or simulation.get("GrdSimul", grandeur) != grandeur
+        ):
+            raise VigicruesAPIError("Forecast station or quantity mismatch")
+        items = simulation.get("Prevs")
+        if not isinstance(items, list):
+            raise VigicruesAPIError("Invalid forecast list")
+        result = {}
+        valid_count = 0
+        now = datetime.now(UTC)
+        for item in items:
+            try:
+                forecast = Prevision(
+                    value=finite_float(item.get("ResMoyPrev")),
+                    timestamp=parse_datetime(item.get("DtPrev")),
+                    unit="m" if grandeur == "H" else "m³/s",
+                    min_value=finite_float(item["ResMinPrev"])
+                    if item.get("ResMinPrev") is not None
+                    else None,
+                    max_value=finite_float(item["ResMaxPrev"])
+                    if item.get("ResMaxPrev") is not None
+                    else None,
+                )
+                valid_count += 1
+                if forecast.timestamp > now:
+                    result[forecast.timestamp] = forecast
+            except (ValueError, TypeError, AttributeError):
+                _LOGGER.debug("Ignoring malformed forecast")
+        if items and not valid_count:
+            raise VigicruesAPIError("No valid forecasts in response")
+        return sorted(result.values(), key=lambda forecast: forecast.timestamp)
 
     async def get_vigilance_levels(self) -> dict[str, str]:
-        """Get current vigilance levels for all troncons.
-
-        Returns:
-            Dictionary mapping troncon ID to vigilance level name
-        """
         data = await self._request(ENDPOINT_VIGILANCE)
+        if not isinstance(data, dict) or not isinstance(data.get("features"), list):
+            raise VigicruesAPIError("Invalid vigilance response")
         levels = {}
-
-        if isinstance(data, dict) and "features" in data:
-            for feature in data["features"]:
-                props = feature.get("properties", {})
-                troncon_id = props.get("CdEntVigiCru")
-                niveau = props.get("NivSituVigiCruEnt")
-                if troncon_id and niveau:
-                    levels[str(troncon_id)] = VIGILANCE_LEVELS.get(niveau, "Inconnu")
-
+        for feature in data["features"]:
+            if not isinstance(feature, dict) or not isinstance(
+                feature.get("properties"), dict
+            ):
+                continue
+            try:
+                props = feature["properties"]
+                section = props.get("CdEntCru") or props.get("CdEntVigiCru")
+                level = int(props.get("NivInfViCr", props.get("NivSituVigiCruEnt")))
+                if section and level in VIGILANCE_LEVELS:
+                    levels[str(section)] = VIGILANCE_LEVELS[level]
+            except (TypeError, ValueError, KeyError):
+                continue
+        if not levels:
+            raise VigicruesAPIError("No valid vigilance levels")
         return levels
 
     async def get_station_data(self, station: Station) -> StationData:
-        """Get all data for a station.
+        tasks = {
+            "hauteur": self._observations_with_fallback(station.id, "H"),
+            "debit": self._observations_with_fallback(station.id, "Q"),
+            "hauteur_previsions": self.get_previsions(station.id, "H"),
+            "debit_previsions": self.get_previsions(station.id, "Q"),
+        }
+        if station.troncon_id:
+            tasks["vigilance"] = self.get_vigilance_levels()
+        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+        now = datetime.now(UTC)
+        data = StationData(station=station, last_attempt=now)
+        for resource, result in zip(tasks, results, strict=True):
+            if isinstance(result, VigicruesAPIError):
+                data.errors[resource] = str(result)
+                continue
+            if isinstance(result, BaseException):
+                raise result
+            if resource == "vigilance":
+                level = result.get(station.troncon_id)
+                if level is None:
+                    data.errors[resource] = "Section missing from vigilance feed"
+                    continue
+                data.vigilance_level = level
+            elif resource in ("hauteur", "debit"):
+                setattr(data, resource, result[-1] if result else None)
+                setattr(data, f"tendance_{resource}", self._calculate_tendance(result))
+            else:
+                setattr(data, resource, result)
+            data.last_success[resource] = now
+        return data
 
-        Args:
-            station: The station object
-
-        Returns:
-            Complete station data including observations, forecasts, and vigilance
-        """
-        # Fetch all data in parallel
-        hauteur_obs_task = self.get_observations(station.id, "H")
-        debit_obs_task = self.get_observations(station.id, "Q")
-        hauteur_prev_task = self.get_previsions(station.id, "H")
-        debit_prev_task = self.get_previsions(station.id, "Q")
-        vigilance_task = self.get_vigilance_levels()
-
-        results = await asyncio.gather(
-            hauteur_obs_task,
-            debit_obs_task,
-            hauteur_prev_task,
-            debit_prev_task,
-            vigilance_task,
-            return_exceptions=True,
-        )
-
-        hauteur_obs = results[0] if not isinstance(results[0], Exception) else []
-        debit_obs = results[1] if not isinstance(results[1], Exception) else []
-        hauteur_prev = results[2] if not isinstance(results[2], Exception) else []
-        debit_prev = results[3] if not isinstance(results[3], Exception) else []
-        vigilance_levels = results[4] if not isinstance(results[4], Exception) else {}
-
-        # Get latest observations
-        latest_hauteur = hauteur_obs[-1] if hauteur_obs else None
-        latest_debit = debit_obs[-1] if debit_obs else None
-
-        # Calculate tendance (trend) based on last few observations
-        tendance_hauteur = self._calculate_tendance(hauteur_obs)
-        tendance_debit = self._calculate_tendance(debit_obs)
-
-        # Get vigilance level for this station's troncon
-        vigilance_level = None
-        if station.troncon_id and station.troncon_id in vigilance_levels:
-            vigilance_level = vigilance_levels[station.troncon_id]
-
-        return StationData(
-            station=station,
-            hauteur=latest_hauteur,
-            debit=latest_debit,
-            hauteur_previsions=hauteur_prev if hauteur_prev else None,
-            debit_previsions=debit_prev if debit_prev else None,
-            vigilance_level=vigilance_level,
-            tendance_hauteur=tendance_hauteur,
-            tendance_debit=tendance_debit,
-        )
-
+    @staticmethod
     def _calculate_tendance(
-        self, observations: list[Observation], sample_size: int = 5
+        observations: list[Observation], sample_size: int = 5
     ) -> str | None:
-        """Calculate the trend based on recent observations.
-
-        Args:
-            observations: List of observations (should be sorted by time)
-            sample_size: Number of observations to consider
-
-        Returns:
-            Trend: "hausse", "baisse", or "stable"
-        """
         if len(observations) < 2:
             return None
-
-        # Take the last few observations
-        recent = observations[-sample_size:] if len(observations) >= sample_size else observations
-
-        if len(recent) < 2:
-            return None
-
-        # Calculate the difference between first and last
-        first_value = recent[0].value
-        last_value = recent[-1].value
-        diff = last_value - first_value
-
-        # Define threshold for "stable" (1% of the value or 0.01m for small values)
-        threshold = max(abs(first_value) * 0.01, 0.01)
-
-        if diff > threshold:
-            return "hausse"
-        elif diff < -threshold:
-            return "baisse"
-        else:
-            return "stable"
+        recent = sorted(observations, key=lambda obs: obs.timestamp)[-sample_size:]
+        diff = recent[-1].value - recent[0].value
+        threshold = max(abs(recent[0].value) * 0.01, 0.01)
+        return (
+            "hausse"
+            if diff > threshold
+            else "baisse"
+            if diff < -threshold
+            else "stable"
+        )
