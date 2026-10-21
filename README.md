@@ -10,7 +10,7 @@ Intégration Home Assistant pour sélectionner une station hydrométrique franç
 - **Vigilance officielle** : Vert, Jaune, Orange ou Rouge, lorsqu'un tronçon surveillé est associé à la station.
 - **Tendance** de la hauteur ; tendance du débit disponible en attribut.
 - **Prévisions** disponibles, en attributs des mesures, limitées aux dix prochaines échéances.
-- **État des données** : à jour, dégradé / secours ou données anciennes.
+- **État des données** : collecte OK, dégradé / secours ou données anciennes.
 
 À chaque mise à jour, Vigicrues est interrogé en priorité. Pour la hauteur et le débit, si sa réponse échoue, est vide ou contient une dernière mesure de plus de **deux heures**, l'intégration interroge l'API officielle **Hub'Eau Hydrométrie v2**. Elle conserve la réponse ayant la mesure la plus récente. Les identifiants de station et la grandeur sont contrôlés ; les hauteurs Hub'Eau en mm et débits en l/s sont divisés par 1 000.
 
@@ -60,7 +60,7 @@ Les identifiants ci-dessous sont indicatifs ; utilisez les identifiants réels d
 | `sensor.vigicrues_paris_austerlitz_tendance` | hausse, stable, baisse |
 | `sensor.vigicrues_paris_austerlitz_statut` | `ok`, `degraded`, `stale` (traduits dans l'interface) |
 
-Le statut est `stale` si toutes les valeurs disponibles sont anciennes ou si leur récupération échoue. Il est `degraded` si une ressource échoue, si une partie des valeurs est ancienne ou si Hub'Eau fournit une mesure. Il est `ok` lorsque les ressources interrogées répondent normalement et que les valeurs disponibles sont récentes.
+Le statut est `stale` si toutes les valeurs disponibles sont anciennes ou si leur récupération échoue. Il est `degraded` si une ressource échoue, si une partie des valeurs est ancienne ou si Hub'Eau fournit une mesure. Il est `ok` (affiché **Collecte OK**) lorsque les ressources interrogées répondent normalement et que les mesures disponibles ont moins de deux heures. Ce statut ne signifie pas que la station vient de produire une nouvelle mesure : une collecte réussie peut renvoyer une mesure vieille de 45 minutes.
 
 La tendance compare les cinq dernières observations de la source retenue. Le seuil de stabilité vaut le maximum entre 1 % de la première valeur et 0,01 dans l'unité de la grandeur. Ce calcul décrit une évolution locale, pas une prévision.
 
@@ -90,7 +90,7 @@ La version 1.2.0 inclut une carte personnalisée, sans dépendance à une autre 
 2. Dans **Paramètres > Tableaux de bord > Ressources**, ajoutez la ressource suivante, de type **Module JavaScript** :
 
    ```text
-   /vigicrues/vigicrues-card.js?v=1.2.0
+   /vigicrues/vigicrues-card.js?v=1.2.1
    ```
 
    Activez le mode avancé de votre profil si le menu Ressources n'est pas visible. Pour un tableau de bord géré en YAML, ajoutez cette entrée à la liste `lovelace.resources` existante :
@@ -98,13 +98,13 @@ La version 1.2.0 inclut une carte personnalisée, sans dépendance à une autre 
    ```yaml
    lovelace:
      resources:
-       - url: /vigicrues/vigicrues-card.js?v=1.2.0
+       - url: /vigicrues/vigicrues-card.js?v=1.2.1
          type: module
    ```
 
 3. Rechargez la page du navigateur, puis ajoutez une carte **Vigicrues** dans le tableau de bord. Si elle n'apparaît pas encore dans le sélecteur, ajoutez une carte manuelle avec le YAML ci-dessous.
 
-Pour utiliser uniquement la carte avec l'intégration 1.1.0, copiez `custom_components/vigicrues/www/vigicrues-card.js` dans `config/www/vigicrues-card.js`, puis utilisez la ressource `/local/vigicrues-card.js?v=1.2.0` de type Module JavaScript. La version 1.2.0 ajoute des attributs stables qui permettent de retrouver les capteurs même après renommage ; avec la version 1.1.0, la détection repose sur leurs attributs et unités existants.
+Pour utiliser uniquement la carte avec l'intégration 1.1.0, copiez `custom_components/vigicrues/www/vigicrues-card.js` dans `config/www/vigicrues-card.js`, puis utilisez la ressource `/local/vigicrues-card.js?v=1.2.1` de type Module JavaScript. La version 1.2.0 ajoute des attributs stables qui permettent de retrouver les capteurs même après renommage ; avec la version 1.1.0, la détection repose sur leurs attributs et unités existants.
 
 ### Afficher toutes les stations configurées
 
@@ -144,7 +144,7 @@ Un clic sur une hauteur ou un débit ouvre le panneau de détails Home Assistant
 
 ### Données anciennes et données absentes
 
-Les badges signalent la source de secours ou une collecte dégradée. Chaque mesure conservée ou de plus de deux heures affiche **Dernière valeur connue**. La carte réévalue l'âge des données toutes les minutes tant qu'elle est affichée, même si aucun nouvel état n'arrive de Home Assistant. Une grandeur absente affiche un tiret et **Mesure indisponible**, jamais un zéro inventé. Une vigilance absente affiche **Vigilance inconnue**. Une station sélectionnée mais introuvable reste visible avec ses mesures indisponibles.
+Le badge **Collecte OK** décrit le résultat de la récupération, pas la date de la mesure. Chaque grandeur affiche séparément **mesure : il y a…** (date réelle de l’observation) et **Collecte réussie : il y a…** (dernière récupération réussie auprès de l’API, même si la valeur n’a pas changé). Si cette dernière date n’est pas disponible, elle est indiquée inconnue. Les badges signalent aussi la source de secours ou une collecte dégradée. Chaque mesure conservée ou de plus de deux heures affiche **Dernière valeur connue**. La carte réévalue l'âge des données toutes les minutes tant qu'elle est affichée, même si aucun nouvel état n'arrive de Home Assistant. Une grandeur absente affiche un tiret et **Mesure indisponible**, jamais un zéro inventé. Une vigilance absente affiche **Vigilance inconnue**. Une station sélectionnée mais introuvable reste visible avec ses mesures indisponibles.
 
 Les flèches décrivent les dernières tendances connues, calculées par l'intégration ; elles ne constituent pas une prévision. Pendant une panne, leur ancienneté est celle de la mesure affichée. Les styles suivent le thème clair ou sombre de Home Assistant et s'adaptent à la largeur de la carte.
 

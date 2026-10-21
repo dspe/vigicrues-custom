@@ -97,3 +97,25 @@ test("configuration distinguishes all stations from an explicit empty selection"
   assert.throws(() => normalizeConfig({ stations: "H413041010" }));
   assert.throws(() => normalizeConfig({ stations: [null] }));
 });
+
+test("distinguishes a 45-minute measurement from a recent successful collection", () => {
+  const input = states();
+  for (const type of ["height", "flow"]) {
+    const resource = type === "height" ? "hauteur" : "debit";
+    const attrs = input[`sensor.renamed_${type}`].attributes;
+    attrs.timestamp = new Date(NOW - 45 * 60000).toISOString();
+    attrs.last_success = { [resource]: new Date(NOW - 2 * 60000).toISOString() };
+  }
+  const result = stationView(discoverStations(input)[0], NOW);
+  assert.equal(result.healthLabel, "Collecte OK");
+  assert.equal(result.height.ageLabel, "Il y a 45 min");
+  assert.equal(result.height.collectionLabel, "Il y a 2 min");
+  assert.equal(result.flow.collectionLabel, "Il y a 2 min");
+  assert.equal(result.height.stale, false);
+});
+
+test("never invents a collection time when only the measurement date is known", () => {
+  const result = stationView(discoverStations(states())[0], NOW);
+  assert.equal(result.height.collectionLabel, "Date inconnue");
+  assert.equal(result.flow.collectionLabel, "Date inconnue");
+});

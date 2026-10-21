@@ -53,7 +53,7 @@
       "statut": {
         "name": "État des données",
         "state": {
-          "ok": "À jour",
+          "ok": "Collecte OK",
           "degraded": "Dégradé / secours",
           "stale": "Données anciennes"
         }

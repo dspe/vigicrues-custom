@@ -53,7 +53,7 @@
       "statut": {
         "name": "Data status",
         "state": {
-          "ok": "Up to date",
+          "ok": "Collection OK",
           "degraded": "Degraded / fallback",
           "stale": "Stale data"
         }

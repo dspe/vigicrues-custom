@@ -63,10 +63,16 @@ function timestampAge(entity, now) {
   return Number.isFinite(stamp) ? Math.max(0, now - stamp) : null;
 }
 
-function metric(entity, trend, now, locale, timeZone) {
+function relativeAge(age) {
+  return age === null ? "Date inconnue" : age < 60000 ? "À l’instant" : age < 3600000 ? `Il y a ${Math.floor(age / 60000)} min` : age < 86400000 ? `Il y a ${Math.floor(age / 3600000)} h` : `Il y a ${Math.floor(age / 86400000)} j`;
+}
+
+function metric(entity, trend, now, locale, timeZone, resource) {
   const numeric = !BAD_STATES.has(entity?.state) && String(entity?.state).trim() !== "" ? Number(entity.state) : NaN;
   const available = Number.isFinite(numeric);
   const age = timestampAge(entity, now);
+  const lastCollection = Date.parse(entity?.attributes?.last_success?.[resource]);
+  const collectionAge = Number.isFinite(lastCollection) ? Math.max(0, now - lastCollection) : null;
   const timestamp = entity?.attributes?.timestamp;
   let dateLabel = "Date de mesure inconnue";
   if (timestamp && Number.isFinite(Date.parse(timestamp))) {
@@ -83,15 +89,16 @@ function metric(entity, trend, now, locale, timeZone) {
     source: entity?.attributes?.source === "hubeau" ? "Hub’Eau" : entity?.attributes?.source === "vigicrues" ? "Vigicrues" : "Source inconnue",
     backup: entity?.attributes?.source === "hubeau",
     dateLabel,
-    ageLabel: age === null ? "Date inconnue" : age < 60000 ? "À l’instant" : age < 3600000 ? `Il y a ${Math.floor(age / 60000)} min` : age < 86400000 ? `Il y a ${Math.floor(age / 3600000)} h` : `Il y a ${Math.floor(age / 86400000)} j`,
+    ageLabel: relativeAge(age),
+    collectionLabel: relativeAge(collectionAge),
     trend: available && Object.hasOwn(TRENDS, trend) ? TRENDS[trend] : null,
   };
 }
 
 export function stationView(station, now = Date.now(), locale = "fr", timeZone) {
   const entities = station.entities;
-  const height = metric(entities.hauteur, entities.tendance?.state, now, locale, timeZone);
-  const flow = metric(entities.debit, entities.tendance?.attributes?.tendance_debit, now, locale, timeZone);
+  const height = metric(entities.hauteur, entities.tendance?.state, now, locale, timeZone, "hauteur");
+  const flow = metric(entities.debit, entities.tendance?.attributes?.tendance_debit, now, locale, timeZone, "debit");
   const measurements = [height, flow].filter(value => value.available);
   const status = entities.statut?.state || entities.hauteur?.attributes?.data_status || entities.debit?.attributes?.data_status;
   let health = "ok";
@@ -103,7 +110,7 @@ export function stationView(station, now = Date.now(), locale = "fr", timeZone) 
   const lastVigilance = Date.parse(vigilance?.attributes?.last_success?.vigilance);
   return {
     id: station.id, name: station.name, river: station.river, height, flow, health,
-    healthLabel: { ok: "À jour", degraded: measurements.some(value => value.backup) ? "Source de secours" : "Collecte dégradée", stale: "Données anciennes", unavailable: "Mesures indisponibles" }[health],
+    healthLabel: { ok: "Collecte OK", degraded: measurements.some(value => value.backup) ? "Source de secours" : "Collecte dégradée", stale: "Données anciennes", unavailable: "Mesures indisponibles" }[health],
     vigilance: level,
     vigilanceStale: level !== null && (vigilance.attributes?.data_stale === true || !Number.isFinite(lastVigilance) || now - lastVigilance > MAX_AGE),
     vigilanceEntityId: vigilance?.entity_id,
@@ -164,9 +171,12 @@ export class VigicruesCard extends HTMLElement {
     button.append(trend);
     if (!view.available) button.append(el("div", "old-note", "Mesure indisponible"));
     else if (view.stale) button.append(el("div", "old-note", "⚠ Dernière valeur connue"));
-    const footer = el("div", "footer", view.available ? `${view.source}${this._config.show_updated ? ` · ${view.ageLabel}` : ""}` : "");
+    const footer = el("div", "footer", view.available ? `${view.source}${this._config.show_updated ? ` · mesure : ${view.ageLabel.toLocaleLowerCase("fr")}` : ""}` : "");
     footer.title = view.dateLabel;
-    if (view.available && this._config.show_updated) footer.append(el("div", "", view.dateLabel));
+    if (view.available && this._config.show_updated) {
+      footer.append(el("div", "", view.dateLabel));
+      footer.append(el("div", "", `Collecte réussie : ${view.collectionLabel.toLocaleLowerCase("fr")}`));
+    }
     button.append(footer);
     return button;
   }
@@ -193,6 +203,7 @@ export class VigicruesCard extends HTMLElement {
       const badges = el("div", "badges");
       const status = el("span", "badge", view.healthLabel);
       status.dataset.kind = view.health;
+      status.title = view.health === "ok" ? "La dernière collecte a réussi. Les mesures peuvent être plus anciennes ; leur date est indiquée sous chaque valeur. Le seuil de données anciennes est de 2 heures." : view.healthLabel;
       badges.append(status);
       if (this._config.show_vigilance) {
         const vigilance = el("button", "badge vigilance");
